@@ -30,6 +30,8 @@ def _persisted(name: str, factory) -> str:
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(DATA_DIR / 'gtm.db').as_posix()}")
+if DATABASE_URL.startswith("postgres://"):   # Render/Heroku style -> SQLAlchemy dialect name
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
 JWT_SECRET = _persisted("GTM_JWT_SECRET", lambda: secrets.token_urlsafe(48))
 # Envelope-encryption master key for stored credentials (use a KMS in production).
 MASTER_KEY = _persisted("GTM_MASTER_KEY", lambda: Fernet.generate_key().decode())
