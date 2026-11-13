@@ -25,3 +25,6 @@ Thumbs.db
 # Internal documents (not code)
 /*.pdf
 .dist/
+
+# Local documentation (kept out of the repo)
+README.md
