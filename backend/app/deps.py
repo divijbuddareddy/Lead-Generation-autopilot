@@ -32,6 +32,7 @@ class Ctx:
     actor_type: str = "user"
     actor_id: str = ""
     api_key: m.ApiKey | None = None
+    demo_session: bool = False
 
     @property
     def org_id(self) -> str:
@@ -113,12 +114,18 @@ def get_ctx(request: Request, db: Session = Depends(get_db),
     if not payload:
         raise APIError(401, "INVALID_TOKEN", "Session expired or invalid. Please log in again.")
     user = db.get(m.User, payload["sub"])
+    from .config import DEMO_LOGIN
+    if payload.get("demo") and not DEMO_LOGIN:
+        raise APIError(401, "DEMO_DISABLED", "Demo sign-in has been turned off. Please log in with a password.")
+    request.state.demo_session = bool(payload.get("demo"))
+    ctx.demo_session = request.state.demo_session
     if not user or not user.is_active:
         raise APIError(401, "USER_INACTIVE", "User is not active.")
     ctx.user, ctx.actor_id = user, user.id
     rate_limit(f"user:{user.id}", 600)
     # One-time passwords must be replaced before anything else can be done (enforced server-side).
-    if user.must_change_password and request.url.path not in ("/app/me", "/app/auth/password"):
+    if user.must_change_password and not request.state.demo_session \
+            and request.url.path not in ("/app/me", "/app/auth/password"):
         raise APIError(403, "PASSWORD_CHANGE_REQUIRED", "Please set a new password before continuing.")
 
     org_id = x_org_id or payload.get("org")

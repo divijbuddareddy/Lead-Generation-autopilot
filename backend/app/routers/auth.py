@@ -88,6 +88,70 @@ def signup(body: SignupIn, request: Request, db: Session = Depends(get_db)):
     return {"token": create_token(user.id, org.id)}
 
 
+DEMO_ROLE_ORDER = ["owner", "admin", "gtm_manager", "sales_user", "viewer", "platform_admin"]
+DEMO_DESCRIPTIONS = {
+    "owner": "Everything, including billing and API keys",
+    "admin": "Users, API keys, policies, audit log",
+    "gtm_manager": "Search, missions, campaigns",
+    "sales_user": "Inbox, meetings, notes",
+    "viewer": "Read-only dashboards",
+    "platform_admin": "Platform console: tenants, providers, pricing",
+}
+
+
+def _demo_user(db, role: str):
+    if role == "platform_admin":
+        return db.scalars(select(m.User).where(m.User.is_platform_admin.is_(True), m.User.is_active.is_(True))
+                          .order_by(m.User.created_at)).first(), None
+    org = db.scalars(select(m.Organization).where(m.Organization.slug == "ai-automation-labs")).first()
+    if not org:
+        return None, None
+    row = db.execute(select(m.User, m.Membership).join(m.Membership, m.Membership.user_id == m.User.id)
+                     .where(m.Membership.organization_id == org.id, m.Membership.role == role,
+                            m.User.is_active.is_(True)).order_by(m.User.created_at)).first()
+    return (row[0], org.id) if row else (None, None)
+
+
+@router.get("/auth/demo-accounts")
+def demo_accounts(db: Session = Depends(get_db)):
+    """Accounts shown as one-click buttons on the login page. Empty unless GTM_DEMO_LOGIN=1."""
+    from ..config import DEMO_LOGIN, DEMO_LOGIN_ROLES
+    if not DEMO_LOGIN:
+        return []
+    out = []
+    for role in DEMO_ROLE_ORDER:
+        if role not in DEMO_LOGIN_ROLES:
+            continue
+        user, _ = _demo_user(db, role)
+        if user:
+            out.append({"role": role, "label": ROLE_LABELS.get(role, role), "name": user.name, "email": user.email,
+                        "description": DEMO_DESCRIPTIONS[role]})
+    return out
+
+
+class DemoLoginIn(BaseModel):
+    role: str
+
+
+@router.post("/auth/demo-login")
+def demo_login(body: DemoLoginIn, request: Request, db: Session = Depends(get_db)):
+    from ..config import DEMO_LOGIN, DEMO_LOGIN_ROLES
+    if not DEMO_LOGIN or body.role not in DEMO_LOGIN_ROLES:
+        raise APIError(403, "DEMO_DISABLED", "Demo sign-in is not enabled.")
+    rate_limit(f"demo:{request.client.host if request.client else ''}", 30)
+    user, org_id = _demo_user(db, body.role)
+    if not user:
+        raise APIError(404, "NO_DEMO_ACCOUNT", "No demo account exists for that role.")
+    if body.role == "platform_admin":
+        mem = _membership(db, user.id)
+        org_id = mem.organization_id if mem else None
+    user.last_login_at = m.utcnow()
+    core.audit(db, org_id, "auth.demo_login", actor_id=user.id, details={"role": body.role},
+               ip=request.client.host if request.client else "")
+    db.commit()
+    return {"token": create_token(user.id, org_id, demo=True)}
+
+
 class PasswordIn(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8)
@@ -123,7 +187,8 @@ def me(ctx: Ctx = Depends(get_ctx)):
     return {
         "user": {"id": ctx.user.id, "name": ctx.user.name, "email": ctx.user.email,
                  "is_platform_admin": ctx.user.is_platform_admin,
-                 "must_change_password": ctx.user.must_change_password},
+                 "must_change_password": ctx.user.must_change_password and not getattr(ctx, "demo_session", False)},
+        "demo_session": getattr(ctx, "demo_session", False),
         "organization": {"id": ctx.org.id, "name": ctx.org.name, "plan": ctx.org.plan_code, "website": ctx.org.website,
                          "internal_mode": (ctx.org.settings or {}).get("internal_mode", False),
                          "onboarded": bool(ctx.org.profile)} if ctx.org else None,

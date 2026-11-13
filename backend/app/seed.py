@@ -105,6 +105,17 @@ def run(db: Session):
                 u = new_user(email, name, name)
                 db.add(m.Membership(user_id=u.id, organization_id=org.id, role=role))
         core.audit(db, org.id, "org.bootstrap", actor_type="system", details={"plan": "internal"})
+    # Demo role accounts: also created on an existing installation when demo sign-in is switched on.
+    if config.SEED_DEMO_USERS or config.DEMO_LOGIN:
+        org = db.scalars(select(m.Organization).where(m.Organization.slug == "ai-automation-labs")).first()
+        if org:
+            for email, name, role in [("admin@aiautomationlabs.local", "Admin User", "admin"),
+                                      ("manager@aiautomationlabs.local", "GTM Manager", "gtm_manager"),
+                                      ("sales@aiautomationlabs.local", "Sales Rep", "sales_user"),
+                                      ("viewer@aiautomationlabs.local", "Read-only Viewer", "viewer")]:
+                if not db.scalars(select(m.User).where(m.User.email == email)).first():
+                    u = new_user(email, name, name)
+                    db.add(m.Membership(user_id=u.id, organization_id=org.id, role=role))
     if not config.DEMO_DATA:
         # Remove unused fake mailboxes left from earlier versions (real leads must use Resend/SMTP).
         for b in db.scalars(select(m.Mailbox).where(m.Mailbox.provider == "sandbox", m.Mailbox.sent_total == 0)):

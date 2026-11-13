@@ -107,6 +107,7 @@ function shell() {
       <div class="small muted" style="padding:0 8px">
         <div><b>${esc(me.user.name)}</b></div>
         <div>${esc(me.role_label || (me.user.is_platform_admin ? "Platform Super Admin" : ""))}${me.user.is_platform_admin && me.role ? " · Platform Admin" : ""}</div>
+        ${me.demo_session ? `<div style="margin-top:4px">${badge("Demo session", "b-warn")}</div>` : ""}
         ${me.credits ? `<div style="margin-top:6px">Credits: <b>${fmt(me.credits.balance)}</b> GTU</div>` : ""}
         <div class="row" style="margin-top:10px"><button class="btn sm" id="theme-btn">◐ Theme</button><button class="btn sm" id="logout-btn">Log out</button></div>
       </div>
@@ -187,7 +188,7 @@ function authView(mode) {
       <button class="btn primary" style="width:100%;justify-content:center">${mode === "signup" ? "Create workspace" : "Sign in"}</button>
     </form>
     <p class="small muted" style="margin-top:16px;text-align:center">${mode === "signup" ? 'Already have an account? <a href="#/login">Sign in</a>' : 'New here? <a href="#/signup">Create a workspace</a>'}</p>
-    ${mode === "login" ? `<p class="small faint" style="margin-top:8px;text-align:center">First run? One-time passwords for the seeded accounts are printed once in the server console.</p>` : ""}
+    ${mode === "login" ? `<div id="demo-accounts"></div>` : ""}
   </div></div>`;
 }
 
@@ -213,7 +214,29 @@ function bindForcePassword() {
   });
 }
 
+async function loadDemoAccounts() {
+  const box = $("#demo-accounts");
+  if (!box) return;
+  let list = [];
+  try { list = await api("/app/auth/demo-accounts"); } catch { list = []; }
+  if (!list.length) return;
+  box.innerHTML = `<div style="margin-top:20px"><div class="row" style="gap:8px;margin-bottom:8px"><hr style="flex:1;margin:0"><span class="small muted">Quick demo access - click a name to sign in</span><hr style="flex:1;margin:0"></div>
+    ${list.map((a) => `<button type="button" class="list-item" data-demo="${esc(a.role)}" style="display:block;width:100%;text-align:left;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--surface);color:var(--text);font:inherit">
+      <div class="row between"><b>${esc(a.name)}</b>${badge(a.label, a.role === "owner" || a.role === "platform_admin" ? "b-accent" : "")}</div>
+      <div class="small muted">${esc(a.email)} · ${esc(a.description)}</div></button>`).join("")}</div>`;
+  $$("[data-demo]", box).forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      const r = await api("/app/auth/demo-login", { method: "POST", body: { role: b.dataset.demo } });
+      S.token = r.token; localStorage.setItem("gtm_token", r.token); localStorage.removeItem("gtm_ws"); S.ws = null;
+      location.hash = b.dataset.demo === "platform_admin" ? "#/platform" : "#/home";
+      await boot();
+    } catch (err) { fail(err); b.disabled = false; }
+  }));
+}
+
 function bindAuth(mode) {
+  if (mode === "login") loadDemoAccounts();
   on("#auth-form", "submit", async (e) => {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target));

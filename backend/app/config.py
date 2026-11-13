@@ -55,3 +55,9 @@ SANDBOX_TIME_COMPRESSION = os.getenv("GTM_TIME_COMPRESSION", "0") == "1"
 # Demo mode (fictional companies, fake mailboxes, simulated replies) is OFF. Real data only.
 # Only automated tests switch it on with GTM_DEMO_DATA=1.
 DEMO_DATA = os.getenv("GTM_DEMO_DATA", "0") == "1"
+# One-click demo sign-in buttons on the login page (no passwords involved). OFF unless set.
+# WARNING: anyone who can open the site can then sign in as these roles.
+DEMO_LOGIN = os.getenv("GTM_DEMO_LOGIN", "0") == "1"
+# Which roles get a demo button (comma separated). Default: every role.
+DEMO_LOGIN_ROLES = [r.strip() for r in os.getenv(
+    "GTM_DEMO_LOGIN_ROLES", "owner,admin,gtm_manager,sales_user,viewer,platform_admin").split(",") if r.strip()]

@@ -23,9 +23,11 @@ def verify_password(pw: str, hashed: str) -> bool:
         return False
 
 
-def create_token(user_id: str, org_id: str | None) -> str:
+def create_token(user_id: str, org_id: str | None, demo: bool = False) -> str:
     now = datetime.now(timezone.utc)
     payload = {"sub": user_id, "org": org_id, "iat": now, "exp": now + timedelta(hours=JWT_TTL_HOURS)}
+    if demo:
+        payload["demo"] = True
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
