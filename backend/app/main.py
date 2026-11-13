@@ -45,6 +45,9 @@ async def request_id_mw(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "same-origin"
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        # Always revalidate the UI so a new deploy is picked up without a hard refresh.
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 
